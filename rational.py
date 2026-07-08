@@ -87,12 +87,6 @@ def manning_full_flow_circular(diameter_ft: float, n: float, slope_ft_per_ft: fl
     return (k / n) * a * (r ** (2.0 / 3.0)) * (slope_ft_per_ft ** 0.5)
 
 
-# 0.2 cross-verification test values (hardcoded expected from formula; same across 3 mirrors):
-# D=2.0 ft, n=0.013 (trowel-finished concrete), S=0.005 ft/ft
-# Expected Q_full ≈ 15.996 cfs (A≈3.1416, R=0.5, V≈5.092 ft/s)
-# python -c "from hydro_tools.rational import manning_full_flow_circular; print(manning_full_flow_circular(2.0, 0.013, 0.005))"
-
-
 # 0.2 additional open engine methods spike (Phase 3 / STRATEGY knowledge + openness + profit north star; builds directly on just-completed Manning full flow circular 0.2 spike).
 # Concrete mirrored primitive: Manning normal (uniform) flow capacity for trapezoidal channel (or rectangular if z=0).
 # High-leverage simple one for network hydraulics / storm sewer open channels; complements Rational/SCS + prior circular Manning (for pipes).
@@ -143,17 +137,6 @@ def manning_normal_flow_trapezoidal(bottom_width_ft: float, side_slope_z: float,
     return (k / n) * a * (r ** (2.0 / 3.0)) * (slope_ft_per_ft ** 0.5)
 
 
-# 0.2 cross-verification test values (hardcoded expected from formula; same across 3 mirrors; pre-computed via python math for exact match):
-# Test1: b=2.0, z=1.0, y=1.0, n=0.013, s=0.005 → Q≈17.656 cfs
-# Test2: b=4.0, z=2.0, y=2.5, n=0.013, s=0.005 → Q≈236.416 cfs (matches pe-calc/tools/mannings.html concrete trap worked example A=22.5/P≈15.18/R≈1.482)
-# Test3: b=1.0, z=0.0 (rectangular), y=0.5, n=0.025, s=0.01 → Q≈1.179 cfs
-# python -c "
-# from hydro_tools.rational import manning_normal_flow_trapezoidal, manning_full_flow_circular
-# print(manning_normal_flow_trapezoidal(2.0, 1.0, 1.0, 0.013, 0.005))
-# print(manning_normal_flow_trapezoidal(4.0, 2.0, 2.5, 0.013, 0.005))
-# print(manning_full_flow_circular(2.0, 0.013, 0.005))  # confirm no breakage to prior 0.2 Manning
-# "
-
 # 0.2 additional open engine methods spike (Phase 3 / STRATEGY knowledge + openness + profit north star; builds on Manning full flow circular + trapezoidal channel normal flow 0.2 spikes).
 # Concrete mirrored primitive: simple linear reservoir routing (basic one-step channel/reservoir hydrograph routing primitive for network hydraulics).
 # High-leverage simple one for network hydraulics / storm sewer / channel routing; complements Rational/SCS (inflow hydro) + prior Manning capacity (steady) for unsteady attenuation in networks.
@@ -191,18 +174,6 @@ def simple_linear_reservoir_routing(inflow_cfs: float, prev_outflow_cfs: float, 
     e = math.exp(-dt_hr / k_hr)
     return prev_outflow_cfs * e + inflow_cfs * (1.0 - e)
 
-
-# 0.2 cross-verification test values (hardcoded expected from formula; same across 3 mirrors; pre-computed via python math for exact match):
-# Test1: I=10, Qp=0, K=1, dt=1 → Qout≈6.321 cfs
-# Test2: I=5, Qp=5, K=2, dt=0.5 → Qout=5.0 (steady state preserved)
-# Test3: I=20, Qp=10, K=0.5, dt=0.25 → Qout≈13.935 cfs
-# python -c "
-# from hydro_tools.rational import simple_linear_reservoir_routing, manning_normal_flow_trapezoidal, manning_full_flow_circular
-# print(simple_linear_reservoir_routing(10.0, 0.0, 1.0, 1.0))
-# print(simple_linear_reservoir_routing(5.0, 5.0, 2.0, 0.5))
-# print(manning_normal_flow_trapezoidal(2.0, 1.0, 1.0, 0.013, 0.005))  # confirm no breakage to prior 0.2 trap
-# print(manning_full_flow_circular(2.0, 0.013, 0.005))  # confirm no breakage to prior 0.2 Manning
-# "
 
 # 0.2 additional open engine methods spike (Phase 3 / STRATEGY knowledge + openness + profit north star; builds on Manning full flow circular + trapezoidal + simple_linear_reservoir_routing 0.2 spikes).
 # Concrete mirrored primitive: manning_friction_head_loss (basic HGL/energy step for network: friction head loss hf over a reach via inverted Manning, for steady network HGL/energy grade line stepping).
@@ -243,45 +214,6 @@ def manning_friction_head_loss(q_cfs: float, n: float, area_ft2: float, hyd_radi
     k = 1.486
     sf = (n * q_cfs / (k * area_ft2 * (hyd_radius_ft ** (2.0 / 3.0)))) ** 2
     return sf * length_ft
-
-
-
-# 0.2 cross-verification test values (hardcoded expected from formula; same across 3 mirrors; pre-computed via python math for exact match):
-# Test2: q=10, n=0.013, A=2.0, R=0.5, L=200 → hf≈0.850 ft (example)
-# python -c "
-# from hydro_tools.rational import manning_friction_head_loss, manning_normal_flow_trapezoidal, simple_linear_reservoir_routing, manning_normal_flow_trapezoidal, manning_full_flow_circular
-# import math
-# q = manning_normal_flow_trapezoidal(2.0, 1.0, 1.0, 0.013, 0.005)
-# a = (2.0 + 1.0*1.0)*1.0
-# p = 2.0 + 2.0*1.0*math.sqrt(1+1)
-# r = a / p
-# print('Q trap:', q)
-# print(manning_friction_head_loss(10.0, 0.013, 2.0, 0.5, 200.0))
-# print(simple_linear_reservoir_routing(10.0, 0.0, 1.0, 1.0))  # confirm no breakage to prior 0.2 routing
-# print(manning_normal_flow_trapezoidal(2.0, 1.0, 1.0, 0.013, 0.005))  # confirm no breakage to prior 0.2 trap
-# print(manning_full_flow_circular(2.0, 0.013, 0.005))  # confirm no breakage to prior 0.2 Manning
-# "
-
-
-# manning_full_flow_circular(2,0.013,0.005): 15.996
-# manning_normal_flow_trapezoidal(2,1,1,0.013,0.005): 17.656
-# simple_linear_reservoir_routing(10,0,1,1): 6.321
-# critical_depth_circular(10,2): 0.658
-# normal_depth_circular(2,0.013,0.005,25.393): 1.000
-# energy_grade_line_step (EGL): 0.451 (~0.500)
-# profile/steady: last hf ~0.5
-
-# manning_full_flow_circular(2,0.013,0.005): 15.996
-# manning_normal_flow_trapezoidal(2,1,1,0.013,0.005): 17.656
-# routing (6.321): 6.321
-# crit (0.658): 0.658
-# normal_circ (1.000): 1.0
-# egl (~0.500): 0.5
-# profile/steady last hf/hgl: 0.5 9.5
-# same in py/js/rust/wasm/pro
-# node/hc: hc-refactored/ present (src/calc etc); consumption matches mirrors "same in py/js/rust/wasm" (prior node runs trap 17.65599 etc identical)
-# log 'DISPATCHED BY USER' + monitor schedulers
-
 
 
 # 0.2 additional open engine methods spike (Phase 3 / STRATEGY knowledge + openness + profit north star; builds on Manning full flow circular + trapezoidal + simple_linear_reservoir_routing + manning_friction_head_loss 0.2 spikes).
@@ -333,22 +265,6 @@ def critical_depth_circular(q_cfs: float, diameter_ft: float) -> float:
     return y_low
 
 
-# 0.2 cross-verification test values (hardcoded expected from formula; same across 3 mirrors; pre-computed via python math for exact match):
-# Test1: D=2.0 ft, Q=10.0 cfs → yc≈0.658 ft
-# Test2: D=2.0 ft, Q=5.0 cfs → yc≈0.461 ft
-# Test3 (for ~yc=1.0): D=2.0 , Q≈22.343 → yc≈1.0
-# python -c "
-# from hydro_tools.rational import critical_depth_circular, manning_friction_head_loss, manning_normal_flow_trapezoidal, simple_linear_reservoir_routing, manning_full_flow_circular
-# print(critical_depth_circular(10.0, 2.0))  # ~0.658
-# print(critical_depth_circular(5.0, 2.0))  # ~0.461
-# print(critical_depth_circular(22.343, 2.0))  # ~1.0
-# print(simple_linear_reservoir_routing(10.0, 0.0, 1.0, 1.0))  # confirm no breakage to prior 0.2 routing
-# print(manning_normal_flow_trapezoidal(2.0, 1.0, 1.0, 0.013, 0.005))  # confirm no breakage to prior 0.2 trap
-# print(manning_full_flow_circular(2.0, 0.013, 0.005))  # confirm no breakage to prior 0.2 Manning
-# "
-
-
-
 # 0.2 additional open engine methods spike (Phase 3 / STRATEGY knowledge + openness + profit north star; builds on Manning full flow circular + trapezoidal + simple_linear_reservoir_routing + manning_friction_head_loss + critical_depth_circular 0.2 spikes; this more-0.2 extension per STRATEGY "more 0.2" recs + momentum after critical just done).
 # Concrete mirrored primitive: energy_grade_line_step (full energy grade line / EGL step; high-leverage for network hydraulics / storm sewer: friction head loss + delta velocity head for full EGL profile step computation; extends basic HGL friction to full energy context for steady/uniform reaches).
 # Pure fn + standard Manning inverted + vh delta, no new deps. (Fits STRATEGY "more 0.2" e.g. "full energy grade line / EGL step" or high-leverage like culvert critical/unsteady basic; complements prior 0.2 capacity/normal/HGL/routing/critical for complete network analysis).
@@ -394,20 +310,6 @@ def energy_grade_line_step(q_cfs: float, n: float, area_ft2: float, hyd_radius_f
     delta_vh = vel_head_up_ft - vel_head_down_ft
     return hf + delta_vh
 
-
-# 0.2 cross-verification test values (hardcoded expected from formula; same across 3 mirrors; pre-computed via python math for exact match; no breakage to prior 0.2 (Manning 15.996/trap 17.656/routing 6.321/HGL 0.5/critical 0.658)):
-# Test2: q=10, n=0.013, A=2.0, R=0.5, L=200, vh=0 → ~0.850 ft
-# python -c "
-# from hydro_tools.rational import energy_grade_line_step, manning_friction_head_loss, critical_depth_circular, simple_linear_reservoir_routing, manning_normal_flow_trapezoidal, manning_full_flow_circular
-# import math
-# r = 3.0 / (2.0 + 2.0*math.sqrt(2.0))  # exact from trap geo for 0.500
-# print(energy_grade_line_step(17.656, 0.013, 3.0, r, 100.0))  # ~0.500 EGL
-# print(energy_grade_line_step(10.0, 0.013, 2.0, 0.5, 200.0))  # ~0.850
-# print(critical_depth_circular(10.0, 2.0))  # confirm no breakage to prior 0.2 critical 0.658
-# print(simple_linear_reservoir_routing(10.0, 0.0, 1.0, 1.0))  # confirm no breakage to prior 0.2 routing 6.321
-# print(manning_normal_flow_trapezoidal(2.0, 1.0, 1.0, 0.013, 0.005))  # confirm no breakage to prior 0.2 trap 17.656
-# print(manning_full_flow_circular(2.0, 0.013, 0.005))  # confirm no breakage to prior 0.2 Manning 15.996
-# "
 
 # 0.2 concrete additional primitive spike (Phase 3 / STRATEGY knowledge + openness + profit north star; this complements the two general "more 0.2" spikes currently running/cancelled/completed: 019eb308-6b3c-7d61-b141-11bd97b22946 (cancelled doom loop) and 019eb30a-97de-7081-9de3-aaf6d5c8e55b (EGL completed); focus normal_depth_circular as high-leverage next after full EGL if not complete or culvert-related; or normal_depth per lib.rs header mentions + critical 0.2 just done). 
 # Concrete mirrored primitive: normal_depth_circular (solve normal/uniform depth y_n for given Q in circular pipe using Manning + partial geo binary iter; complements capacity (full/trap), critical, HGL/EGL loss, routing for complete open network/channel hydraulics).
@@ -471,19 +373,6 @@ def normal_depth_circular(diameter_ft: float, n: float, slope_ft_per_ft: float, 
     return y_low
 
 
-# 0.2 cross-verification test values (hardcoded expected from formula; same across 3 mirrors; pre-computed via python math for exact match; no breakage to prior 0.2 (Manning 15.996/trap 17.656/routing 6.321/HGL 0.5/critical 0.658/EGL ~0.500 from completed more-0.2 spike)):
-# Test1: D=2.0 ft, n=0.013, S=0.005, Q=25.393 cfs → yn≈1.000 ft (partial circular at y=D/2; Q precomp via same A/P/R/Manning geo)
-# Test2: D=2.0, n=0.013, S=0.005, Q=10.0 → yn≈0.85 ft (example lower flow)
-# python -c "
-# from hydro_tools.rational import normal_depth_circular, energy_grade_line_step, critical_depth_circular, simple_linear_reservoir_routing, manning_normal_flow_trapezoidal, manning_full_flow_circular
-# print(normal_depth_circular(2.0, 0.013, 0.005, 25.393))  # ~1.000
-# print(normal_depth_circular(2.0, 0.013, 0.005, 10.0))
-# print(critical_depth_circular(10.0, 2.0))  # confirm no breakage to prior 0.2 critical 0.658
-# print(simple_linear_reservoir_routing(10.0, 0.0, 1.0, 1.0))  # confirm no breakage to prior 0.2 routing 6.321
-# print(manning_normal_flow_trapezoidal(2.0, 1.0, 1.0, 0.013, 0.005))  # confirm no breakage to prior 0.2 trap 17.656
-# print(manning_full_flow_circular(2.0, 0.013, 0.005))  # confirm no breakage to prior 0.2 Manning 15.996
-# "
-
 # (a) normal_depth_trapezoidal (trap variant mirror style of normal_depth_circular, solves y for given Q using the existing flow fn; fills gap for open channel normal depth in networks).
 # (b) steady_network_hgl_profile (multi-reach HGL/EGL stepping using existing manning_friction_head_loss + energy_grade_line_step; simple list of reaches -> list of HGL/EGL points; for full steady profile in storm sewer networks / dam pilots).
 # If time/light: more routing foundation (level pool stub comment only; core routing already via linear_reservoir).
@@ -534,16 +423,6 @@ def normal_depth_trapezoidal(bottom_width_ft: float, side_slope_z: float, n: flo
             y_low = y
     return y_low
 
-
-# 0.2 cross-verification test values (hardcoded expected; same across 3 mirrors; pre-computed; NO breakage to priors: 17.656 trap, 15.996 circ, 0.500 HGL, 6.321 route, 0.658 crit, 1.000 normal_circ; new trap normal inverse ~1.000):
-# Test1: b=2.0, z=1.0, n=0.013, s=0.005, Q=17.656 → yn≈1.000 ft (inverse of manning_normal_flow_trapezoidal test)
-# Test2: b=4.0, z=2.0, n=0.013, s=0.005, Q=236.416 → yn≈2.5 ft (matches pe-calc mannings trap ex)
-# python -c "
-# import sys; sys.path.insert(0, r'C:\\Users\\michael.flynn\hydro-tools')
-# from rational import normal_depth_trapezoidal, normal_depth_circular, manning_normal_flow_trapezoidal, manning_full_flow_circular, manning_friction_head_loss, simple_linear_reservoir_routing, critical_depth_circular, energy_grade_line_step
-# print('new trap normal ~1.000:', normal_depth_trapezoidal(2.0, 1.0, 0.013, 0.005, 17.656))
-# print('verify flow at y=1:', manning_normal_flow_trapezoidal(2.0,1.0,1.0,0.013,0.005))
-# "
 
 def steady_network_hgl_profile(reaches: list, start_hgl_ft: float = 10.0) -> list:
     """
@@ -602,30 +481,13 @@ def steady_network_hgl_profile(reaches: list, start_hgl_ft: float = 10.0) -> lis
     return profile
 
 
-# 0.2 cross-verification test values for profile + trap normal (hardcoded; same across mirrors; pre-computed via priors):
-# Trap normal: as above ~1.000
-# Profile ex (1 reach from trap Q): reaches=[{'length_ft':100,'n':0.013,'area_ft2':3.0,'hyd_radius_ft':0.62132,'q_cfs':17.656}], start=10.0 → last hgl≈9.500 , hf=0.500 (matches prior HGL 0.500; egl same when vh=0; R corrected from geo P=b+2y√(1+z²)≈4.8284 for exact S*L)
-# python -c "
-# import sys; sys.path.insert(0, r'C:\\Users\\michael.flynn\hydro-tools')
-# from rational import steady_network_hgl_profile, normal_depth_trapezoidal, manning_friction_head_loss, energy_grade_line_step, manning_normal_flow_trapezoidal
-# reaches = [{'length_ft':100.0, 'n':0.013, 'area_ft2':3.0, 'hyd_radius_ft':0.62132, 'q_cfs':17.656}]
-# prof = steady_network_hgl_profile(reaches, start_hgl_ft=10.0)
-# print('profile last hgl/egl/hf:', prof[-1]['hgl_ft'], prof[-1]['egl_ft'], prof[-1]['hf_ft'])
-# print('trap normal new ~1.000:', normal_depth_trapezoidal(2.0,1.0,0.013,0.005,17.656))
-# print('priors no break 17.656/0.500/6.321/0.658/1.000/15.996:', manning_normal_flow_trapezoidal(2.0,1.0,1.0,0.013,0.005), manning_friction_head_loss(17.656,0.013,3.0,0.62132,100.0), 6.321, 0.658, 1.000, 15.996)
-# "
-
-
-# velocity fn gap fill (example from task): manning_velocity (mean flow velocity from Manning). Also discharge/ area helper for completeness.
+# velocity fn gap fill: manning_velocity (mean flow velocity from Manning). Also discharge/area helper for completeness.
 def manning_velocity(n: float, hyd_radius_ft: float, slope_ft_per_ft: float) -> float:
     """
     Manning mean velocity for a reach (V in ft/s).
     Formula (US): V = (1.486 / n) * R^(2/3) * S^(1/2)
     Complements capacity (Q=V*A), HGL/EGL (velocity head V^2/2g in energy_grade_line_step), normal/critical for full network hydraulics.
-    Pure, no new deps. Mirrors in Rust/WASM (stormsewer lib.rs + demo_manning_velocity) + JS (hc calc/index.js manningVelocity).
-
-    Phase 3 / STRATEGY "more 0.2 methods" + network extension: added end-to-end (rational.py + cli + __init__; stormsewer lib.rs/Cargo + hydraulics/network; hc calc; playground self-contained demo + "same in py/js"; pe-calc blurb; appends to 0.1-QUICKSTART/RELEASE/READMEs). Bisection confirm for normal trap + profile enhancements (added vel/edge outputs) + more edge tests here.
-
+    Pure, no new deps.
 
     Reference: public-domain Chow/HEC-22. Can use with manning_normal_flow_trapezoidal to get A then V=Q/A or direct.
     """
@@ -635,79 +497,9 @@ def manning_velocity(n: float, hyd_radius_ft: float, slope_ft_per_ft: float) -> 
     return (k / n) * (hyd_radius_ft ** (2.0 / 3.0)) * (slope_ft_per_ft ** 0.5)
 
 
-
 def discharge_to_velocity(q_cfs: float, area_ft2: float) -> float:
     """Simple V = Q / A (ft/s) for any section; pairs with velocity head in EGL."""
     if area_ft2 <= 0.0:
         raise ValueError("area >0 required")
     return q_cfs / area_ft2
-
-# 0.2 cross-verif for new velocity (exact match mirrors; use R from trap ex ~0.62132 for S=0.005 n=0.013 -> V~ (from Q/A ~17.656/3 ~5.885 ft/s; Manning direct similar):
-
-# normal trap bisection confirm + more edge tests (enhance per task gaps; bisection loop already in fn, explicit confirm + edges):
-# bisection: start y_low=0.0001 y_high=100; 60 iters; Q_calc(y) vs target Q using manning_normal_flow_trapezoidal; converges to ~1.000 for inverse of 17.656 trap ex (verified). Edges: Q=0 -> yn~0; Q very large -> yn high (clamped by caller); z=0 rect; b=0 triangular etc.
-# python -c "... normal_depth_trapezoidal(2,1,0.013,0.005,0) ~0 ; normal_depth_trapezoidal(0,1,0.013,0.005,10) edge handled; ..."
-
-# steady_network_hgl_profile enhancements (fuller profile: add velocity per reach using new manning_velocity + discharge_to_velocity + cum dist + edge handling; more output fields for pro network use in pilots):
-# Enhanced to include 'velocity_ft_per_s' (from Q/A) + 'manning_v_ft_per_s' + better edges (empty, zero Q). Matches task "full steady... enhancements". Used in pro FieldHydro/Tauri for Priya/Mark.
-
-
-# trap 17.656
-# routing 6.321
-# crit 0.658
-# normal_circ 1.000
-# manning_full_flow_circular(2,0.013,0.005): 15.996452037889803
-# manning_normal_flow_trapezoidal(2,1,1,0.013,0.005): 17.655990906836966
-# simple_linear_reservoir_routing(10,0,1,1): 6.321205588285577
-# critical_depth_circular(10,2): 0.6579230815328128
-# normal_depth_circular(2,0.013,0.005,25.393): 1.0000049922636571
-# energy_grade_line_step~0.500 EGL: 0.500000883653244
-# steady_network_hgl_profile last hf: 0.500000883653244
-# normal_depth_trapezoidal(2,1,0.013,0.005,17.656): 1.0000002811699922
-# manning_velocity(0.013,0.62132,0.005): 5.885328132746334
-# === END PYTHON (GREEN) ===
-# CONSUMPTION MATRIX NOTE: full 0.2 primitives identical numeric (rounded per task: 15.996/17.656/0.500/6.321/0.658/1.000/0.500 + profile/vel/normal variants) across:
-# - py: hydro-tools/rational.py (source + python -c verif)
-# - js: hc-refactored/src/calc/index.js (manningFullFlowCircular etc + window.HC export)
-# - rust/wasm: dev/OpenCADStudio/crates/stormsewer/src/lib.rs + hydraulics.rs (full_flow_capacity, normal_depth, critical_depth, manning_q etc + wasm_bindgen reexports in lib.rs; Cargo.toml cdylib/wasm)
-# EGL~0.500
-# full 15.996
-# normal_trap 1.000
-# robust profile e.g. steady_network_hgl_profile([{'Q':17.656,'n':0.013,'A':3.0,'R':0.6708,'L':100.0}]) last hf~0.451 GREEN (no ValueError; aliases)
-
-
-
-# manning_full_flow_circular(2,0.013,0.005): 15.996452037889803 ~15.996
-# manning_normal_flow_trapezoidal(2,1,1,0.013,0.005): 17.655990906836966 ~17.656
-# simple_linear_reservoir_routing(10,0,1,1): 6.321205588285577 ~6.321
-# critical_depth_circular(10,2): 0.6579230815328128 ~0.658
-# normal_depth_circular(2.0,0.013,0.005,25.393): 1.0000049922636571 ~1.000
-# energy_grade_line_step (EGL geo): 0.5000005150186937 ~0.500
-# steady_network_hgl_profile last hf (geo): 0.5000005150186937
-# normal_depth_trapezoidal(2,1,0.013,0.005,17.656): 1.0000002811699922 ~1.000
-# profile/vel/normal variants confirmed (vel~5.885, profile hgl drop consistent).
-# === END PYTHON (GREEN) ===
-
-
-
-# trap 17.65599 ~17.656
-# full 15.99645 ~15.996
-# routing 6.3212 ~6.321
-# crit 0.65792 ~0.658
-# egl 0.5000005 ~0.500 EGL
-# normal_circ 1.00000 ~1.000
-# normal_trap 1.00000 ~1.000
-# vel 5.885
-# profile_last_hgl/hf 9.5 / 0.500
-# 
-
-
-
-# manning_full_flow_circular: 15.996452037889803 ~15.996
-# manning_normal_flow_trapezoidal: 17.655990906836966 ~17.656
-# simple_linear_reservoir_routing: 6.321205588285577 ~6.321
-# critical_depth_circular: 0.6579230815328128 ~0.658
-# normal_depth_circular: 1.0000049922636571 ~1.000
-# energy_grade_line_step (EGL): 0.4514404581939723 ~0.500
-# + profile/steady (steady_network_hgl_profile) + "same in py/js/rust/wasm/pro"
 
