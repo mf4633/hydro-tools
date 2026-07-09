@@ -5,7 +5,24 @@ Basic Rational Method peak flow calculator and related open-channel/storm-sewer 
 Q = C * i * A   (cfs when i in in/hr, A in acres, or scaled)
 """
 
-from typing import Dict
+import math
+from typing import Any, Dict, List, Tuple
+
+
+def _circular_geometry(depth_ft: float, diameter_ft: float) -> Tuple[float, float, float]:
+    """Geometry of a partly full circular section: (area, top width, wetted perimeter).
+
+    ``alpha = 2*acos(1 - 2y/D)`` is the full central angle subtending the wetted
+    segment, so area = (D^2/8)(alpha - sin alpha), top width = D*sin(alpha/2),
+    and wetted perimeter = (D/2)*alpha. All in ft / ft^2.
+    """
+    arg = max(min(1.0 - 2.0 * (depth_ft / diameter_ft), 1.0), -1.0)
+    alpha = 2.0 * math.acos(arg)
+    area = (diameter_ft * diameter_ft / 8.0) * (alpha - math.sin(alpha))
+    top_width = diameter_ft * math.sin(alpha / 2.0)
+    wetted_perimeter = (diameter_ft / 2.0) * alpha
+    return area, top_width, wetted_perimeter
+
 
 def rational_peak(c: float, intensity_in_per_hr: float, area_acres: float) -> float:
     """
@@ -73,7 +90,6 @@ def manning_full_flow_circular(diameter_ft: float, n: float, slope_ft_per_ft: fl
     """
     if diameter_ft <= 0.0 or n <= 0.0 or slope_ft_per_ft < 0.0:
         raise ValueError("diameter_ft > 0, n > 0, slope_ft_per_ft >= 0 required")
-    import math
     d = diameter_ft
     a = math.pi * (d / 2.0) ** 2
     r = d / 4.0
@@ -106,7 +122,6 @@ def manning_normal_flow_trapezoidal(bottom_width_ft: float, side_slope_z: float,
     """
     if bottom_width_ft < 0.0 or side_slope_z < 0.0 or flow_depth_ft <= 0.0 or n <= 0.0 or slope_ft_per_ft < 0.0:
         raise ValueError("bottom_width_ft >=0, side_slope_z >=0, flow_depth_ft >0, n>0, slope_ft_per_ft >=0 required")
-    import math
     b = bottom_width_ft
     z = side_slope_z
     y = flow_depth_ft
@@ -139,7 +154,6 @@ def simple_linear_reservoir_routing(inflow_cfs: float, prev_outflow_cfs: float, 
     """
     if k_hr <= 0.0 or dt_hr <= 0.0 or inflow_cfs < 0.0 or prev_outflow_cfs < 0.0:
         raise ValueError("k_hr >0, dt_hr >0, flows >=0 required")
-    import math
     e = math.exp(-dt_hr / k_hr)
     return prev_outflow_cfs * e + inflow_cfs * (1.0 - e)
 
@@ -169,7 +183,6 @@ def manning_friction_head_loss(q_cfs: float, n: float, area_ft2: float, hyd_radi
     """
     if q_cfs < 0.0 or n <= 0.0 or area_ft2 <= 0.0 or hyd_radius_ft <= 0.0 or length_ft <= 0.0:
         raise ValueError("q_cfs >=0, n>0, area>0, R>0, L>0 required")
-    import math
     k = 1.486
     sf = (n * q_cfs / (k * area_ft2 * (hyd_radius_ft ** (2.0 / 3.0)))) ** 2
     return sf * length_ft
@@ -192,23 +205,16 @@ def critical_depth_circular(q_cfs: float, diameter_ft: float) -> float:
     """
     if q_cfs < 0.0 or diameter_ft <= 0.0:
         raise ValueError("q_cfs >=0, diameter_ft >0 required")
-    import math
     g = 32.2
     y_low = 0.001
     y_high = diameter_ft * 0.999
     for _ in range(40):
         y = (y_low + y_high) / 2.0
-        arg = 1.0 - 2.0 * (y / diameter_ft)
-        arg = max(min(arg, 1.0), -1.0)
-        alpha = 2.0 * math.acos(arg)
-        # circular-segment (partly full) area = (D^2/8)(alpha - sin alpha),
-        # where alpha = 2*acos(1 - 2y/D) is the full central angle
-        a = (diameter_ft * diameter_ft / 8.0) * (alpha - math.sin(alpha))
-        t = diameter_ft * math.sin(alpha / 2.0)
+        a, t, _ = _circular_geometry(y, diameter_ft)
         if t <= 0.0:
             y_high = y
             continue
-        lhs = (a ** 3 / t) if t > 0.0 else 0.0
+        lhs = a ** 3 / t
         rhs = (q_cfs * q_cfs / g)
         if lhs > rhs:
             y_high = y
@@ -243,14 +249,8 @@ def energy_grade_line_step(q_cfs: float, n: float, area_ft2: float, hyd_radius_f
     Reference: standard public-domain (Chow, HEC-22). Combine with manning_normal_flow_trapezoidal etc.
     to get A/R, then this full EGL step (friction + velocity head) for network profiles.
     """
-    if q_cfs < 0.0 or n <= 0.0 or area_ft2 <= 0.0 or hyd_radius_ft <= 0.0 or length_ft <= 0.0:
-        raise ValueError("q_cfs >=0, n>0, area>0, R>0, L>0 required")
-    import math
-    k = 1.486
-    sf = (n * q_cfs / (k * area_ft2 * (hyd_radius_ft ** (2.0 / 3.0)))) ** 2
-    hf = sf * length_ft
-    delta_vh = vel_head_up_ft - vel_head_down_ft
-    return hf + delta_vh
+    hf = manning_friction_head_loss(q_cfs, n, area_ft2, hyd_radius_ft, length_ft)
+    return hf + (vel_head_up_ft - vel_head_down_ft)
 
 
 # Normal (uniform) depth for a circular pipe/channel: solve y_n for given Q via Manning + partial geometry.
@@ -261,7 +261,7 @@ def normal_depth_circular(diameter_ft: float, n: float, slope_ft_per_ft: float, 
 
     Formula (US customary units for storm sewer / channel context):
         For given y: alpha = 2 * acos(1 - 2*(y/D))
-        A = (D^2/4) * (alpha - sin(alpha))
+        A = (D^2/8) * (alpha - sin(alpha))
         P = (D/2) * alpha
         R = A / P
         Q_calc = (1.486 / n) * A * R^(2/3) * S^(1/2)
@@ -274,47 +274,36 @@ def normal_depth_circular(diameter_ft: float, n: float, slope_ft_per_ft: float, 
         q_cfs: discharge Q (cfs)
 
     Returns:
-        y_n normal depth (ft); approx D if Q >= full capacity (simple iter clamps).
+        y_n normal depth (ft). Raises ValueError if Q exceeds the pipe's maximum
+        capacity (Manning discharge is non-monotonic in depth near full).
 
     Reference: standard public-domain (Chow, HEC-22). Combine with manning_full_flow_circular (capacity
     check), critical_depth_circular, and energy_grade_line_step for full network profiles.
     """
     if diameter_ft <= 0.0 or n <= 0.0 or slope_ft_per_ft < 0.0 or q_cfs < 0.0:
         raise ValueError("diameter_ft >0, n>0, slope>=0, q>=0 required")
-    import math
     d = diameter_ft
-    n_ = n
     s = slope_ft_per_ft
-    q = q_cfs
+    k = 1.486
+
+    def q_at(depth: float) -> float:
+        a, _, p = _circular_geometry(depth, d)
+        r = a / p if p > 0.0 else 0.0
+        return (k / n) * a * (r ** (2.0 / 3.0)) * (s ** 0.5)
+
     y_low = 0.0001
     y_high = d * 0.9999
     for _ in range(50):
         y = (y_low + y_high) / 2.0
-        arg = 1.0 - 2.0 * (y / d)
-        arg = max(min(arg, 1.0), -1.0)
-        alpha = 2.0 * math.acos(arg)
-        # circular-segment (partly full) area = (D^2/8)(alpha - sin alpha)
-        a = (d * d / 8.0) * (alpha - math.sin(alpha))
-        p = (d / 2.0) * alpha
-        r = a / p if p > 0.0 else 0.0
-        k = 1.486
-        q_calc = (k / n_) * a * (r ** (2.0 / 3.0)) * (s ** 0.5)
-        if q_calc > q:
+        if q_at(y) > q_cfs:
             y_high = y
         else:
             y_low = y
-    # Manning discharge in a circular section is non-monotonic in depth (it
-    # peaks near y/D ~ 0.94 at ~1.08x full-flow, then drops to full at y=D).
-    # If the bisection never brackets the target, the target exceeds the pipe's
-    # maximum capacity and the pipe surcharges — signal that instead of
-    # silently returning a near-full depth.
-    arg = max(min(1.0 - 2.0 * (y_low / d), 1.0), -1.0)
-    alpha = 2.0 * math.acos(arg)
-    a = (d * d / 8.0) * (alpha - math.sin(alpha))
-    p = (d / 2.0) * alpha
-    r = a / p if p > 0.0 else 0.0
-    q_at_y = (1.486 / n_) * a * (r ** (2.0 / 3.0)) * (s ** 0.5)
-    if q > 0.0 and abs(q_at_y - q) > 1e-3 * q:
+    # Manning discharge in a circular section is non-monotonic in depth (it peaks
+    # near y/D ~ 0.94 at ~1.08x full-flow, then drops to full at y=D). If the
+    # bisection never brackets the target, Q exceeds the pipe's maximum capacity
+    # and the pipe surcharges — signal that instead of returning a near-full depth.
+    if q_cfs > 0.0 and abs(q_at(y_low) - q_cfs) > 1e-3 * q_cfs:
         raise ValueError("Q exceeds pipe capacity at this slope; pipe surcharges")
     return y_low
 
@@ -365,7 +354,7 @@ def normal_depth_trapezoidal(bottom_width_ft: float, side_slope_z: float, n: flo
     return y_low
 
 
-def steady_network_hgl_profile(reaches: list, start_hgl_ft: float = 10.0) -> list:
+def steady_network_hgl_profile(reaches: List[Dict[str, float]], start_hgl_ft: float = 10.0) -> List[Dict[str, Any]]:
     """
     Steady (uniform flow assumption per reach) HGL/EGL profile for simple multi-reach network.
     High-leverage for full steady HGL/EGL in storm sewer networks / dam pilots (uses existing manning_friction_head_loss + energy_grade_line_step for stepping; simple list[dict] reaches -> list[dict] points with cum HGL/EGL).

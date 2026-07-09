@@ -10,7 +10,7 @@ Usage examples (future):
 import argparse
 import sys
 
-def main():
+def main() -> None:
     from . import __version__
     parser = argparse.ArgumentParser(prog="hydro-tools")
     parser.add_argument("--version", action="version", version=__version__)
