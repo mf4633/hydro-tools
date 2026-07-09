@@ -1,75 +1,124 @@
 # hydro-tools
 
-Shared Python utilities extracted from the hundreds of one-off hydraulic modeling scripts.
+Open, auditable Python primitives for stormwater and open-channel hydraulics —
+the Rational Method, SCS curve-number runoff, Manning capacity and depth
+solvers, HGL/EGL steps, and simple reservoir routing — plus a small pure-Python
+`.dbf` reader. US customary units (feet, cfs, in/hr) throughout.
+
+Every method is a plain, dependency-free function you can read, test, and cite
+against public-domain references (Chow, *Open-Channel Hydraulics*; FHWA HEC-22;
+NRCS NEH).
+
+## Install
+
+```bash
+pip install hydro-tools            # from PyPI (once published)
+pip install -e ".[dev]"            # from a checkout, with test deps
+```
+
+Requires Python 3.9+. No runtime dependencies.
 
 ## Quick start
 
-```bash
-# From this directory
-pip install -e .
+```python
+from hydro_tools import (
+    rational_peak, scs_runoff_depth,
+    manning_full_flow_circular, critical_depth_circular, normal_depth_circular,
+)
 
-# PyPI (when published)
-pip install hydro-tools
-
-# Or just use the module directly
-python -m hydro_tools.cli dbf-dump path/to/some.dbf -n 3
+rational_peak(0.7, 4.0, 5.0)            # Q = C·i·A -> 14.0 cfs
+scs_runoff_depth(3.0, 75)               # SCS runoff depth -> 0.961 in
+manning_full_flow_circular(2.0, 0.013, 0.005)   # full-flow capacity -> 15.996 cfs
+critical_depth_circular(10.0, 2.0)      # critical depth -> 1.131 ft
+normal_depth_circular(2.0, 0.013, 0.005, 8.0)   # normal depth -> 1.000 ft
 ```
 
-## Publish to PyPI
+Or from the command line:
 
 ```bash
-cd hydro-tools
-pip install build twine
-python -m build
-twine upload dist/*   # requires PyPI token
+hydro-tools rational --c 0.7 --i 4.0 --a 5.0
+hydro-tools manning --d 2.0 --n 0.013 --s 0.005
+hydro-tools critical-depth --q 10 --d 2
+hydro-tools dbf-dump path/to/some.dbf -n 3
 ```
 
+(`python -m hydro_tools.cli ...` works identically if the console script isn't
+on your `PATH`.)
 
-### 0.1 Open Engine — Polished Status & Consumption (Phase 3 visibility)
+## API reference
 
+All discharges are in cfs, lengths/depths in feet, slopes in ft/ft, Manning's
+`n` dimensionless, intensity in in/hr, area in acres (Rational) or ft² (velocity).
 
+### Rational Method & runoff
+| Function | Returns |
+| --- | --- |
+| `rational_peak(c, intensity_in_per_hr, area_acres)` | peak discharge Q = C·i·A (cfs) |
+| `batch_rational(areas: dict[str, float], c, i)` | `{name: Q}` for several sub-areas |
+| `scs_runoff_depth(rainfall_in, cn)` | SCS runoff depth (in); `cn` in (0, 100] |
 
-`hydro-tools` + `stormsewer` v0.1.0 (Rust cdylib + WASM) + `hc-refactored/src/calc` (JS) = the mirrored, auditable foundation of standard public-domain methods (Rational Method, SCS runoff, Manning hydraulics, network accumulation).
+### Manning capacity & velocity
+| Function | Returns |
+| --- | --- |
+| `manning_full_flow_circular(diameter_ft, n, slope)` | full-flow capacity of a circular pipe (cfs) |
+| `manning_normal_flow_trapezoidal(bottom_width_ft, side_slope_z, flow_depth_ft, n, slope)` | discharge of a trapezoidal (or rectangular, `z=0`) channel at a given depth (cfs) |
+| `manning_velocity(n, hyd_radius_ft, slope)` | mean velocity V = (1.486/n)·R^(2/3)·S^(1/2) (ft/s) |
+| `discharge_to_velocity(q_cfs, area_ft2)` | V = Q/A (ft/s) |
 
-**0.1 status (post publish polish):**
-- Methods: Rational peak flow (C i A, composites, freq factors, network), SCS runoff depth + triangular hydrograph, Manning-based hydraulics (normal/critical depth, capacity, velocity for conduits). **0.2 spike (this cycle)**: concrete `manning_full_flow_circular` primitive added (full circular pipe capacity) — mirrored + exposed.
-- Mirrored across 3 languages for verifiability, education, and embedding.
-- Consumption is now documented at the root level with professional release notes.
+### Depth solvers
+| Function | Returns |
+| --- | --- |
+| `critical_depth_circular(q_cfs, diameter_ft)` | critical depth (ft), from Q²/g = A³/T |
+| `normal_depth_circular(diameter_ft, n, slope, q_cfs)` | normal depth (ft); raises `ValueError` if Q exceeds the pipe's capacity |
+| `normal_depth_trapezoidal(bottom_width_ft, side_slope_z, n, slope, q_cfs)` | normal depth (ft) |
 
-**Exact beginner commands (repo root):**
+### Energy / hydraulic grade line & routing
+| Function | Returns |
+| --- | --- |
+| `manning_friction_head_loss(q_cfs, n, area_ft2, hyd_radius_ft, length_ft)` | friction head loss hf = S_f·L (ft) |
+| `energy_grade_line_step(q_cfs, n, area_ft2, hyd_radius_ft, length_ft, vel_head_up_ft=0, vel_head_down_ft=0)` | friction loss plus the change in velocity head (ft); equals hf for uniform flow |
+| `simple_linear_reservoir_routing(inflow_cfs, prev_outflow_cfs, k_hr, dt_hr)` | routed outflow for one timestep (cfs) |
+| `steady_network_hgl_profile(reaches, start_hgl_ft=10.0)` | list of per-reach `{reach_idx, cum_length_ft, hgl_ft, egl_ft, hf_ft, delta_egl_ft}` |
+
+### .dbf reader
+| Function | Returns |
+| --- | --- |
+| `read_dbf(path)` | iterator of records as dicts (streams, skips deleted rows, coerces numeric fields) |
+| `dbf_to_list(path)` | all records as a list of dicts |
+
+## CLI
+
+`hydro-tools <command> [options]`. Calculation commands:
+
+| Command (aliases) | Example |
+| --- | --- |
+| `rational` | `hydro-tools rational --c 0.7 --i 4 --a 5` |
+| `scs` | `hydro-tools scs --rain 3 --cn 75` |
+| `manning` | `hydro-tools manning --d 2 --n 0.013 --s 0.005` |
+| `manning-trap` (`trapezoidal`) | `hydro-tools manning-trap --b 2 --z 1 --y 1 --n 0.013 --s 0.005` |
+| `critical-depth` (`yc-circular`) | `hydro-tools critical-depth --q 10 --d 2` |
+| `normal-depth` (`normal-depth-circular`) | `hydro-tools normal-depth --d 2 --n 0.013 --s 0.005 --q 8` |
+| `normal-depth-trap` | `hydro-tools normal-depth-trap --b 2 --z 1 --n 0.013 --s 0.005 --q 17.656` |
+| `hgl-loss` (`hgl-step`, `friction-head-loss`) | `hydro-tools hgl-loss --q 17.656 --n 0.013 --a 3 --r 0.62132 --l 100` |
+| `egl-step` (`energy-grade-line`) | `hydro-tools egl-step --q 17.656 --n 0.013 --a 3 --r 0.62132 --l 100` |
+| `routing` (`linear-reservoir`) | `hydro-tools routing --i 10 --qp 0 --k 1 --dt 1` |
+| `velocity` (`manning-velocity`) | `hydro-tools velocity --n 0.013 --r 0.62132 --s 0.005` |
+| `network-hgl-profile` | `hydro-tools network-hgl-profile` |
+| `dbf-dump` | `hydro-tools dbf-dump some.dbf -n 3` |
+
+Run `hydro-tools --help` for the full list.
+
+## Development
+
 ```bash
-# Python / hydro-tools (scripting, CLI, CAD, tests)
-pip install -e hydro-tools
-python -m hydro_tools.cli rational --c 0.7 --i 4.0 --a 5.0
-python -c "
-from hydro_tools.rational import rational_peak, scs_runoff_depth, manning_full_flow_circular
-print(rational_peak(0.7, 4.0, 5.0))  # → 14.0 cfs
-print(manning_full_flow_circular(2.0, 0.013, 0.005))  # 0.2: ~15.996 cfs (D=2ft, n=0.013, S=0.005)
-"
-# CLI also: python -m hydro_tools.cli manning --d 2.0 --n 0.013 --s 0.005
+pip install -e ".[dev]"
+python -m pytest tests
 ```
 
+CI runs the test suite on Python 3.9–3.12 and smoke-tests the built wheel on
+every push and pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+build/release workflow.
 
-```bash
-# Python/hydro-tools CLI (enhanced subcmds)
-python -m hydro_tools.cli hgl-loss --q 17.656 --n 0.013 --a 3.0 --r 0.62132 --l 100
-python -m hydro_tools.cli egl-step --q 17.656 --n 0.013 --a 3.0 --r 0.62132 --l 100 --vhup 0 --vhdown 0
-# ~0.500 ft EGL
-python -m hydro_tools.cli critical-depth --q 10 --d 2
-# ~1.131 ft
-python -m hydro_tools.cli normal-depth --d 2 --n 0.013 --s 0.005 --q 8.0
-# ~1.000 ft
-python -m hydro_tools.cli velocity --n 0.013 --r 0.62132 --s 0.005
-python -m hydro_tools.cli network-hgl-profile
-# Also python -c "
-from hydro_tools.rational import manning_normal_flow_trapezoidal, manning_friction_head_loss, critical_depth_circular, normal_depth_circular, energy_grade_line_step, manning_full_flow_circular
-print('trap 17.656:', manning_normal_flow_trapezoidal(2.0,1.0,1.0,0.013,0.005))
-print('hglStep0_2 ~0.500:', manning_friction_head_loss(17.656,0.013,3,0.62132,100))
-print('crit ~1.131:', critical_depth_circular(10,2))
-print('normal ~1.000:', normal_depth_circular(2.0,0.013,0.005,8.0))
-print('EGL ~0.500:', energy_grade_line_step(17.656,0.013,3.0,0.62132,100.0))
-print('full 15.996:', manning_full_flow_circular(2.0,0.013,0.005))
-"  # GREEN match across mirrors + CLI
-```
+## License
 
-
+MIT — see [LICENSE](LICENSE).
