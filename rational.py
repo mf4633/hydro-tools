@@ -35,6 +35,8 @@ def scs_runoff_depth(rainfall_in: float, cn: float) -> float:
     Extracted/port style from common patterns in the user's root analyze_*.py and add_*.py scripts.
     Useful for hydrograph volume calculations and consistent with the existing rational_peak.
     """
+    if not (0.0 < cn <= 100.0):
+        raise ValueError("Curve number CN must be in (0, 100]")
     if rainfall_in <= 0:
         return 0.0
     s = (1000.0 / cn) - 10.0
@@ -251,7 +253,9 @@ def critical_depth_circular(q_cfs: float, diameter_ft: float) -> float:
         arg = 1.0 - 2.0 * (y / diameter_ft)
         arg = max(min(arg, 1.0), -1.0)
         alpha = 2.0 * math.acos(arg)
-        a = (diameter_ft * diameter_ft / 4.0) * (alpha - math.sin(alpha))
+        # circular-segment (partly full) area = (D^2/8)(alpha - sin alpha),
+        # where alpha = 2*acos(1 - 2y/D) is the full central angle
+        a = (diameter_ft * diameter_ft / 8.0) * (alpha - math.sin(alpha))
         t = diameter_ft * math.sin(alpha / 2.0)
         if t <= 0.0:
             y_high = y
@@ -361,7 +365,8 @@ def normal_depth_circular(diameter_ft: float, n: float, slope_ft_per_ft: float, 
         arg = 1.0 - 2.0 * (y / d)
         arg = max(min(arg, 1.0), -1.0)
         alpha = 2.0 * math.acos(arg)
-        a = (d * d / 4.0) * (alpha - math.sin(alpha))
+        # circular-segment (partly full) area = (D^2/8)(alpha - sin alpha)
+        a = (d * d / 8.0) * (alpha - math.sin(alpha))
         p = (d / 2.0) * alpha
         r = a / p if p > 0.0 else 0.0
         k = 1.486
@@ -370,6 +375,19 @@ def normal_depth_circular(diameter_ft: float, n: float, slope_ft_per_ft: float, 
             y_high = y
         else:
             y_low = y
+    # Manning discharge in a circular section is non-monotonic in depth (it
+    # peaks near y/D ~ 0.94 at ~1.08x full-flow, then drops to full at y=D).
+    # If the bisection never brackets the target, the target exceeds the pipe's
+    # maximum capacity and the pipe surcharges — signal that instead of
+    # silently returning a near-full depth.
+    arg = max(min(1.0 - 2.0 * (y_low / d), 1.0), -1.0)
+    alpha = 2.0 * math.acos(arg)
+    a = (d * d / 8.0) * (alpha - math.sin(alpha))
+    p = (d / 2.0) * alpha
+    r = a / p if p > 0.0 else 0.0
+    q_at_y = (1.486 / n_) * a * (r ** (2.0 / 3.0)) * (s ** 0.5)
+    if q > 0.0 and abs(q_at_y - q) > 1e-3 * q:
+        raise ValueError("Q exceeds pipe capacity at this slope; pipe surcharges")
     return y_low
 
 
@@ -413,7 +431,12 @@ def normal_depth_trapezoidal(bottom_width_ft: float, side_slope_z: float, n: flo
     ss = slope_ft_per_ft
     qq = q_cfs
     y_low = 0.0001
-    y_high = 100.0  # safe upper for most civil channels; clamps in practice
+    y_high = 100.0  # safe upper bound for civil channels
+    # Trapezoidal discharge is monotonic in depth, so if the requested Q exceeds
+    # the flow at the upper bound the solver would return the arbitrary cap;
+    # signal that the depth is outside the searched range instead.
+    if manning_normal_flow_trapezoidal(b, z, y_high, nn, ss) < qq:
+        raise ValueError("Q exceeds channel flow at 100 ft depth; increase bound or check inputs")
     for _ in range(60):
         y = (y_low + y_high) / 2.0
         q_calc = manning_normal_flow_trapezoidal(b, z, y, nn, ss)

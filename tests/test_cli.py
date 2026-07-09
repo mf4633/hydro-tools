@@ -60,11 +60,11 @@ def test_hgl_loss_and_aliases(monkeypatch, capsys, name):
 
 def test_critical_depth(monkeypatch, capsys):
     run(monkeypatch, ["critical-depth", "--q", "10", "--d", "2"])
-    assert "yc=0.658 ft" in capsys.readouterr().out
+    assert "yc=1.131 ft" in capsys.readouterr().out
 
 
 def test_normal_depth(monkeypatch, capsys):
-    run(monkeypatch, ["normal-depth", "--d", "2", "--n", "0.013", "--s", "0.005", "--q", "25.393"])
+    run(monkeypatch, ["normal-depth", "--d", "2", "--n", "0.013", "--s", "0.005", "--q", "8.0"])
     assert "yn=1.000 ft" in capsys.readouterr().out
 
 
