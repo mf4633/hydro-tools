@@ -144,7 +144,7 @@ def main():
     elif args.cmd in ("normal-depth", "normal-depth-circular"):
         from .rational import normal_depth_circular
         yn = normal_depth_circular(args.d, args.n, args.s, args.q)
-        print(f"Normal depth yn={yn:.3f} ft (D={args.d}, n={args.n}, S={args.s}, Q={args.q}) [0.2 additional normal_depth_circular; test ~1.000 for Q~25.393 at D=2; mirrors py/js/rust; no break priors]")
+        print(f"Normal depth yn={yn:.3f} ft (D={args.d}, n={args.n}, S={args.s}, Q={args.q}) [0.2 additional normal_depth_circular; test ~1.000 for Q~8.0 at D=2; mirrors py/js/rust; no break priors]")
     elif args.cmd == "analyze-connectivity":
         # Demo: shows how an old root script pattern can move here
         print("analyze-connectivity stub — porting logic from analyze_network_connectivity.py next")
@@ -186,7 +186,7 @@ def main():
         print('routing', simple_linear_reservoir_routing(10.0, 0.0, 1.0, 1.0))
         print('crit', critical_depth_circular(10.0, 2.0))
         print('egl', energy_grade_line_step(17.656, 0.013, 3.0, 0.62132, 100.0))  # correct R
-        print('normal_circ', normal_depth_circular(2.0, 0.013, 0.005, 25.393))
+        print('normal_circ', normal_depth_circular(2.0, 0.013, 0.005, 8.0))
         print('normal_trap', normal_depth_trapezoidal(2.0, 1.0, 0.013, 0.005, 17.656))
         print('vel_manning', manning_velocity(0.013, 0.62132, 0.005))
         print('vel_discharge', discharge_to_velocity(17.656, 3.0))

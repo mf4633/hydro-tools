@@ -51,6 +51,17 @@ def test_scs_runoff_depth_nonpositive_rain():
     assert r.scs_runoff_depth(0.0, 75.0) == 0.0
 
 
+def test_scs_runoff_depth_cn_at_100_is_all_runoff():
+    # CN = 100 -> S = 0 -> Ia = 0 -> all rainfall becomes runoff
+    assert r.scs_runoff_depth(3.0, 100.0) == pytest.approx(3.0)
+
+
+@pytest.mark.parametrize("cn", [0.0, -5.0, 100.1, 150.0])
+def test_scs_runoff_depth_invalid_cn(cn):
+    with pytest.raises(ValueError):
+        r.scs_runoff_depth(3.0, cn)
+
+
 # --- Manning capacity ------------------------------------------------------
 
 def test_manning_full_flow_circular():
@@ -144,12 +155,20 @@ def test_energy_grade_line_step_adds_velocity_head_delta():
 # --- Depth solvers ---------------------------------------------------------
 
 def test_critical_depth_circular():
-    assert r.critical_depth_circular(10.0, 2.0) == pytest.approx(0.658, abs=1e-3)
+    # Q^2/g = A^3/T with the correct circular-segment area (D^2/8)(theta - sin theta)
+    assert r.critical_depth_circular(10.0, 2.0) == pytest.approx(1.131, abs=1e-3)
 
 
 def test_normal_depth_circular_inverts_capacity():
-    # Q chosen so normal depth is ~1.0 ft in a 2 ft pipe
-    assert r.normal_depth_circular(2.0, 0.013, 0.005, 25.393) == pytest.approx(1.0, abs=1e-3)
+    # ~8.0 cfs is the half-full (y=D/2) discharge for this 2 ft pipe, so the
+    # solver must recover y ~ 1.0 ft. (The pipe's true max capacity is ~17.2 cfs.)
+    assert r.normal_depth_circular(2.0, 0.013, 0.005, 8.0) == pytest.approx(1.0, abs=1e-3)
+
+
+def test_normal_depth_circular_raises_over_capacity():
+    # 25.393 cfs far exceeds the ~17.2 cfs max capacity of a 2 ft pipe at S=0.005
+    with pytest.raises(ValueError):
+        r.normal_depth_circular(2.0, 0.013, 0.005, 25.393)
 
 
 def test_normal_depth_trapezoidal_inverts_flow():
@@ -160,6 +179,12 @@ def test_normal_depth_trapezoidal_inverts_flow():
     assert r.manning_normal_flow_trapezoidal(2.0, 1.0, yn, 0.013, 0.005) == pytest.approx(
         17.656, abs=1e-2
     )
+
+
+def test_normal_depth_trapezoidal_raises_when_beyond_bound():
+    # A discharge requiring depth > 100 ft is outside the searched range
+    with pytest.raises(ValueError):
+        r.normal_depth_trapezoidal(2.0, 1.0, 0.013, 0.005, 1.0e9)
 
 
 # --- Network profile -------------------------------------------------------
