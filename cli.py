@@ -13,8 +13,9 @@ import argparse
 import sys
 
 def main():
+    from . import __version__
     parser = argparse.ArgumentParser(prog="hydro-tools")
-    parser.add_argument("--version", action="version", version="0.2.0")
+    parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="cmd")
 
     # Placeholder for now — will be filled as we port real scripts

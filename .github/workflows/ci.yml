@@ -28,3 +28,30 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel and sdist
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Install the built wheel into a clean venv and smoke-test it
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install dist/*.whl
+          # entry point resolves and reports the single-sourced version
+          test "$(/tmp/smoke/bin/hydro-tools --version)" = "$(/tmp/smoke/bin/python -c 'import hydro_tools; print(hydro_tools.__version__)')"
+          # package imports and py.typed shipped
+          /tmp/smoke/bin/python -c "import hydro_tools, importlib.util; assert importlib.util.find_spec('hydro_tools') is not None"
+          /tmp/smoke/bin/python -c "import hydro_tools, os; p=os.path.join(os.path.dirname(hydro_tools.__file__),'py.typed'); assert os.path.exists(p), 'py.typed missing from wheel'"
+          # a real calculation runs end to end
+          /tmp/smoke/bin/hydro-tools rational --c 0.5 --i 4 --a 2
