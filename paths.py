@@ -8,16 +8,17 @@ def get_project_root() -> Path:
     """Walk up from this file until we find a recognizable project marker."""
     p = Path(__file__).resolve()
     for parent in p.parents:
-        if (parent / ".git").exists() or (parent / "board-gaming").exists():
+        if (parent / ".git").exists() or (parent / "pyproject.toml").exists():
             return parent
     return p.parent.parent  # fallback
 
 def resolve_model_path(relative: str) -> Path:
-    r"""
+    """
     Resolve a path that may be relative to the project or an environment var.
-    Supports common patterns seen in the old scripts:
-      - Z:/Shared/Projects/...
-      - C:\Users\michael.flynn\OneDrive - McGill Associates, PA\...
+
+    Resolution order: an absolute path is returned as-is; otherwise the path is
+    tried relative to the project root, then to ``$HYDRO_PROJECT_BASE`` if set,
+    and finally relative to the current working directory.
     """
     root = get_project_root()
     p = Path(relative)

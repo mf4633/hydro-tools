@@ -1,9 +1,6 @@
 """
 rational.py
-Basic Rational Method peak flow calculator.
-
-Extracted / generalized from patterns in root analyze_*.py and add_*.py scripts.
-Can be used by fieldhydro exports or future CLI tools.
+Basic Rational Method peak flow calculator and related open-channel/storm-sewer hydraulics primitives.
 
 Q = C * i * A   (cfs when i in in/hr, A in acres, or scaled)
 """
@@ -27,13 +24,22 @@ def batch_rational(areas: Dict[str, float], c: float, i: float) -> Dict[str, flo
     """Convenience for multiple sub-areas."""
     return {name: rational_peak(c, i, a) for name, a in areas.items()}
 
-# Bridge note: for full network analysis, use the Rust stormsewer crate (WASM build in progress for web + CAD integration).
-
 def scs_runoff_depth(rainfall_in: float, cn: float) -> float:
     """
     Simple SCS runoff depth (inches) using the standard approximation.
-    Extracted/port style from common patterns in the user's root analyze_*.py and add_*.py scripts.
     Useful for hydrograph volume calculations and consistent with the existing rational_peak.
+
+    Formula (US customary units):
+        S = (1000 / CN) - 10      (potential maximum retention, in)
+        Ia = 0.2 * S              (initial abstraction, in)
+        Q = (P - Ia)^2 / (P - Ia + S)   for P > Ia, else 0
+
+    Args:
+        rainfall_in: rainfall depth P (in)
+        cn: SCS curve number CN (0, 100]
+
+    Returns:
+        runoff depth Q (in).
     """
     if not (0.0 < cn <= 100.0):
         raise ValueError("Curve number CN must be in (0, 100]")
@@ -46,11 +52,7 @@ def scs_runoff_depth(rainfall_in: float, cn: float) -> float:
     return ((rainfall_in - ia) ** 2) / (rainfall_in - ia + s)
 
 
-# 0.2 open engine methods spike (Phase 3 / STRATEGY knowledge + openness + profit north star).
-# Concrete mirrored primitive: Manning full-flow capacity for circular storm sewer / channel.
-# High-leverage, complements Rational/SCS (stormsewer crate focus + existing pe-calc/tools/mannings.html).
-# Fully open/free, no new deps. Extendable to trapezoidal etc later.
-# Serves Priya lead interest ("network hydraulics extension for the open core") + 0.2 recs.
+# Manning full-flow capacity for a circular storm sewer / channel. Complements Rational/SCS.
 def manning_full_flow_circular(diameter_ft: float, n: float, slope_ft_per_ft: float) -> float:
     """
     Manning's equation full (normal) flow capacity for a circular pipe flowing full.
@@ -67,17 +69,7 @@ def manning_full_flow_circular(diameter_ft: float, n: float, slope_ft_per_ft: fl
     Returns:
         Q_full in cfs.
 
-    Mirrors exactly the implementations in:
-    - Rust/stormsewer (dev/OpenCADStudio/crates/stormsewer/src/lib.rs + reexported hydraulics)
-    - JS/hc-refactored (src/calc/index.js + window.HC)
-
-    Reference: standard public-domain (Chow, HEC-22, etc). See full hydraulics.rs for
-    partial flow, normal_depth, max_capacity etc (pro can layer network on this base).
-
-    Phase 3 note: 0.2 methods expansion keeps core 100% open/auditable/educational while
-    pro (FieldHydro network + provenance, HydroComplete full modeling) adds value on top.
-    contribute path as Rational/SCS), profit (foundation for advanced paid network tools
-    without reinventing the primitive).
+    Reference: standard public-domain (Chow, HEC-22).
     """
     if diameter_ft <= 0.0 or n <= 0.0 or slope_ft_per_ft < 0.0:
         raise ValueError("diameter_ft > 0, n > 0, slope_ft_per_ft >= 0 required")
@@ -89,11 +81,7 @@ def manning_full_flow_circular(diameter_ft: float, n: float, slope_ft_per_ft: fl
     return (k / n) * a * (r ** (2.0 / 3.0)) * (slope_ft_per_ft ** 0.5)
 
 
-# 0.2 additional open engine methods spike (Phase 3 / STRATEGY knowledge + openness + profit north star; builds directly on just-completed Manning full flow circular 0.2 spike).
-# Concrete mirrored primitive: Manning normal (uniform) flow capacity for trapezoidal channel (or rectangular if z=0).
-# High-leverage simple one for network hydraulics / storm sewer open channels; complements Rational/SCS + prior circular Manning (for pipes).
-# Pure fn + standard geometry, no new deps. (Simple storage/channel routing stub or HGL would also fit but this is mirrorable + high immediate leverage per STRATEGY recs for "0.2 methods" + "network hydraulics extension").
-# Serves Priya lead interest ("network hydraulics extension for the open core") + STRATEGY Phase 3 "next wave (..., 0.2 methods, ...)" and "more FieldHydro pro flow on provenance gate" after Manning.
+# Manning normal (uniform) flow capacity for a trapezoidal channel (rectangular if z=0).
 def manning_normal_flow_trapezoidal(bottom_width_ft: float, side_slope_z: float, flow_depth_ft: float, n: float, slope_ft_per_ft: float) -> float:
     """
     Manning's equation normal (uniform) flow capacity for a trapezoidal channel section (rectangular if z=0).
@@ -114,17 +102,7 @@ def manning_normal_flow_trapezoidal(bottom_width_ft: float, side_slope_z: float,
     Returns:
         Q in cfs at the given depth (normal flow for the trapezoidal section).
 
-    Mirrors exactly the implementations in:
-    - Rust/stormsewer (dev/OpenCADStudio/crates/stormsewer/src/lib.rs WASM + reexports; top stormsewer/README + src for docs)
-    - JS/hc-refactored (src/calc/index.js + window.HC after main.js load)
-
-    Reference: standard public-domain (Chow, V.T. "Open-Channel Hydraulics"; HEC-22; NRCS NEH). See pe-calc/tools/mannings.html
-    for identical trap geometry in worked example (A/P/R) + schema.
-
-    Phase 3 note: additional 0.2 method spike (post Manning circular) per STRATEGY "next wave" keeps core 100% open/auditable/educational while
-    pro (FieldHydro network + provenance gate + AR field marks, HydroComplete full modeling + Tauri desktop spike, exportProAuditPackage)
-    adds value on top without gating this primitive.
-    openness (free + identical contribute template as Rational/SCS/Manning: implement + doc + export + note in quickstarts/STRATEGY),
+    Reference: standard public-domain (Chow, V.T. "Open-Channel Hydraulics"; HEC-22; NRCS NEH).
     """
     if bottom_width_ft < 0.0 or side_slope_z < 0.0 or flow_depth_ft <= 0.0 or n <= 0.0 or slope_ft_per_ft < 0.0:
         raise ValueError("bottom_width_ft >=0, side_slope_z >=0, flow_depth_ft >0, n>0, slope_ft_per_ft >=0 required")
@@ -139,11 +117,7 @@ def manning_normal_flow_trapezoidal(bottom_width_ft: float, side_slope_z: float,
     return (k / n) * a * (r ** (2.0 / 3.0)) * (slope_ft_per_ft ** 0.5)
 
 
-# 0.2 additional open engine methods spike (Phase 3 / STRATEGY knowledge + openness + profit north star; builds on Manning full flow circular + trapezoidal channel normal flow 0.2 spikes).
-# Concrete mirrored primitive: simple linear reservoir routing (basic one-step channel/reservoir hydrograph routing primitive for network hydraulics).
-# High-leverage simple one for network hydraulics / storm sewer / channel routing; complements Rational/SCS (inflow hydro) + prior Manning capacity (steady) for unsteady attenuation in networks.
-# Pure fn + standard discrete linear reservoir, no new deps. (Simple storage routing stub fits STRATEGY recs for "0.2 methods" + "network hydraulics extension").
-# Serves Priya lead interest ("network hydraulics extension for the open core") + STRATEGY Phase 3 "next wave (..., 0.2 methods, ...)" + "maintenance + real user acquisition".
+# Simple one-step linear reservoir routing for channel/reservoir hydrograph attenuation.
 def simple_linear_reservoir_routing(inflow_cfs: float, prev_outflow_cfs: float, k_hr: float, dt_hr: float) -> float:
     """
     Simple linear reservoir routing step for basic channel or reservoir hydrograph attenuation.
@@ -161,14 +135,7 @@ def simple_linear_reservoir_routing(inflow_cfs: float, prev_outflow_cfs: float, 
     Returns:
         outflow at end of timestep Q(t+dt) in cfs.
 
-    Mirrors exactly the implementations in:
-    - Rust/stormsewer (dev/OpenCADStudio/crates/stormsewer/src/lib.rs WASM + reexports; top stormsewer/README + src for docs)
-    - JS/hc-refactored (src/calc/index.js + window.HC after main.js load)
-
-    Reference: standard public-domain linear reservoir / simple routing model (e.g. base for many in "Applied Hydrology" Chow et al.; NRCS intro methods; complements full Modified Puls / storage-indication in pe-calc/tools/reservoir-routing.html).
-
-    pro (FieldHydro network + provenance gate + AR field marks, HydroComplete full modeling + Tauri desktop spike, exportProAuditPackage) adds value on top without gating this primitive.
-    openness (free + identical contribute template as Rational/SCS/Manning/trap: implement + doc + export + note in quickstarts/STRATEGY),
+    Reference: standard public-domain linear reservoir / simple routing model (e.g. "Applied Hydrology", Chow et al.; NRCS intro methods).
     """
     if k_hr <= 0.0 or dt_hr <= 0.0 or inflow_cfs < 0.0 or prev_outflow_cfs < 0.0:
         raise ValueError("k_hr >0, dt_hr >0, flows >=0 required")
@@ -177,10 +144,7 @@ def simple_linear_reservoir_routing(inflow_cfs: float, prev_outflow_cfs: float, 
     return prev_outflow_cfs * e + inflow_cfs * (1.0 - e)
 
 
-# 0.2 additional open engine methods spike (Phase 3 / STRATEGY knowledge + openness + profit north star; builds on Manning full flow circular + trapezoidal + simple_linear_reservoir_routing 0.2 spikes).
-# Concrete mirrored primitive: manning_friction_head_loss (basic HGL/energy step for network: friction head loss hf over a reach via inverted Manning, for steady network HGL/energy grade line stepping).
-# High-leverage simple one for network hydraulics / storm sewer / channel HGL profiles; complements Rational/SCS (inflow) + prior Manning capacity (for Q/S) + routing (for unsteady) for full network analysis.
-# Pure fn + standard inverted Manning loss (hf = L * [n*Q / (1.486 * A * R**(2/3)) ]**2 ), no new deps. (Fits STRATEGY recs for "0.2 methods" + "network hydraulics extension" + "next wave").
+# Manning friction head loss over a reach (HGL step) via inverted Manning.
 def manning_friction_head_loss(q_cfs: float, n: float, area_ft2: float, hyd_radius_ft: float, length_ft: float) -> float:
     """
     Manning friction head loss (hf) over a reach length for basic HGL / energy grade line step in network hydraulics.
@@ -200,15 +164,8 @@ def manning_friction_head_loss(q_cfs: float, n: float, area_ft2: float, hyd_radi
     Returns:
         hf in ft (friction head loss over the reach).
 
-    Mirrors exactly the implementations in:
-    - Rust/stormsewer (dev/OpenCADStudio/crates/stormsewer/src/lib.rs WASM + reexports; top stormsewer/README + src for docs)
-    - JS/hc-refactored (src/calc/index.js + window.HC after main.js load)
-
-    Reference: standard public-domain (Chow, HEC-22, etc). Complements pe-calc/tools/mannings.html (capacity) + reservoir-routing.html.
-    Can combine with prior 0.2 manning_normal_flow_trapezoidal etc to get A/R then loss for HGL profile.
-
-    pro (FieldHydro network + provenance gate + AR field marks, HydroComplete full modeling + Tauri desktop spike, exportProAuditPackage + exportProBatchAuditPackage) adds value on top without gating this primitive.
-    openness (free + identical contribute template as Rational/SCS/Manning/trap/routing: implement + doc + export + note in quickstarts/STRATEGY + .github/ISSUE_TEMPLATE/engine-feedback.md),
+    Reference: standard public-domain (Chow, HEC-22). Combine with manning_normal_flow_trapezoidal etc.
+    to get A/R, then this loss for an HGL profile.
     """
     if q_cfs < 0.0 or n <= 0.0 or area_ft2 <= 0.0 or hyd_radius_ft <= 0.0 or length_ft <= 0.0:
         raise ValueError("q_cfs >=0, n>0, area>0, R>0, L>0 required")
@@ -218,8 +175,7 @@ def manning_friction_head_loss(q_cfs: float, n: float, area_ft2: float, hyd_radi
     return sf * length_ft
 
 
-# 0.2 additional open engine methods spike (Phase 3 / STRATEGY knowledge + openness + profit north star; builds on Manning full flow circular + trapezoidal + simple_linear_reservoir_routing + manning_friction_head_loss 0.2 spikes).
-# Concrete mirrored primitive: critical_depth_circular (high-leverage basic for circular channel/pipe critical depth; key network/culvert step to determine flow regime, complements normal depth/Manning capacity for open channel hydraulics in storm sewer networks).
+# Critical depth for a circular pipe/channel (determines flow regime for network/culvert analysis).
 def critical_depth_circular(q_cfs: float, diameter_ft: float) -> float:
     """
     Critical depth for circular pipe/channel (yc where Froude=1; basic auditable primitive for network HGL/culvert analysis).
@@ -232,15 +188,7 @@ def critical_depth_circular(q_cfs: float, diameter_ft: float) -> float:
     Returns:
         yc critical depth (ft)
 
-    Mirrors exactly the implementations in:
-    - Rust/stormsewer (dev/OpenCADStudio/crates/stormsewer/src/lib.rs WASM + reexports; top stormsewer/README + src for docs)
-    - JS/hc-refactored (src/calc/index.js + window.HC after main.js load)
-
-    Reference: standard public-domain (Chow, HEC-22, etc). Complements pe-calc/tools/mannings.html (capacity/normal) + prior 0.2.
-    Can combine with prior 0.2 manning_* + friction for full network critical/normal/HGL profiles.
-
-    pro (FieldHydro network + provenance gate + AR field marks, HydroComplete full modeling + Tauri desktop spike, exportProAuditPackage + exportProBatchAuditPackage) adds value on top without gating this primitive.
-    openness (free + identical contribute template as Rational/SCS/Manning/trap/routing/HGL: implement + doc + export + note in quickstarts/STRATEGY + .github/ISSUE_TEMPLATE/engine-feedback.md),
+    Reference: standard public-domain (Chow, HEC-22).
     """
     if q_cfs < 0.0 or diameter_ft <= 0.0:
         raise ValueError("q_cfs >=0, diameter_ft >0 required")
@@ -269,15 +217,13 @@ def critical_depth_circular(q_cfs: float, diameter_ft: float) -> float:
     return y_low
 
 
-# 0.2 additional open engine methods spike (Phase 3 / STRATEGY knowledge + openness + profit north star; builds on Manning full flow circular + trapezoidal + simple_linear_reservoir_routing + manning_friction_head_loss + critical_depth_circular 0.2 spikes; this more-0.2 extension per STRATEGY "more 0.2" recs + momentum after critical just done).
-# Concrete mirrored primitive: energy_grade_line_step (full energy grade line / EGL step; high-leverage for network hydraulics / storm sewer: friction head loss + delta velocity head for full EGL profile step computation; extends basic HGL friction to full energy context for steady/uniform reaches).
-# Pure fn + standard Manning inverted + vh delta, no new deps. (Fits STRATEGY "more 0.2" e.g. "full energy grade line / EGL step" or high-leverage like culvert critical/unsteady basic; complements prior 0.2 capacity/normal/HGL/routing/critical for complete network analysis).
+# Energy grade line (EGL) step: friction head loss plus change in velocity head over a reach.
 def energy_grade_line_step(q_cfs: float, n: float, area_ft2: float, hyd_radius_ft: float, length_ft: float, vel_head_up_ft: float = 0.0, vel_head_down_ft: float = 0.0) -> float:
     """
     Energy grade line (EGL) step: friction head loss (from inverted Manning, same as basic HGL) + delta velocity head for full EGL profile stepping in networks.
     (High-leverage auditable primitive; EGL drop over reach = hf + (Vh_up - Vh_down); for uniform flow delta Vh=0 yields same as HGL friction.)
 
-    Formula (US customary units for storm sewer / channel context, consistent with rational_peak cfs + prior 0.2 manning_* + manning_friction_head_loss):
+    Formula (US customary units for storm sewer / channel context):
         S_f = [ n * Q / (1.486 * A * R^(2/3)) ]^2
         hf = S_f * L
         delta_EGL = hf + (vel_head_up - vel_head_down)
@@ -294,16 +240,8 @@ def energy_grade_line_step(q_cfs: float, n: float, area_ft2: float, hyd_radius_f
     Returns:
         delta_EGL in ft (full energy loss/step for the reach).
 
-    Mirrors exactly the implementations in:
-    - Rust/stormsewer (dev/OpenCADStudio/crates/stormsewer/src/lib.rs WASM + reexports; top stormsewer/README + src for docs)
-    - JS/hc-refactored (src/calc/index.js + window.HC after main.js load)
-
-    Reference: standard public-domain (Chow, HEC-22, etc). Complements pe-calc/tools/mannings.html + reservoir-routing.html + prior 0.2.
-    Can combine with manning_normal_flow_trapezoidal etc to get A/R then full EGL step (friction + vh) for network profiles.
-
-    pro (FieldHydro network + provenance gate + AR field marks + batch, HydroComplete full modeling + Tauri desktop spike, exportPro* + auth/services) adds value on top without gating this primitive.
-    openness (free + identical contribute template as Rational/SCS/Manning/trap/routing/HGL/critical: implement + doc + export + note in quickstarts/STRATEGY + .github/ISSUE_TEMPLATE/engine-feedback.md),
-    All at abs C:\\Users\michael.flynn\ paths. Ties hydro-tools/rational.py, stormsewer, hc, FieldHydro, Tauri.
+    Reference: standard public-domain (Chow, HEC-22). Combine with manning_normal_flow_trapezoidal etc.
+    to get A/R, then this full EGL step (friction + velocity head) for network profiles.
     """
     if q_cfs < 0.0 or n <= 0.0 or area_ft2 <= 0.0 or hyd_radius_ft <= 0.0 or length_ft <= 0.0:
         raise ValueError("q_cfs >=0, n>0, area>0, R>0, L>0 required")
@@ -315,15 +253,13 @@ def energy_grade_line_step(q_cfs: float, n: float, area_ft2: float, hyd_radius_f
     return hf + delta_vh
 
 
-# 0.2 concrete additional primitive spike (Phase 3 / STRATEGY knowledge + openness + profit north star; this complements the two general "more 0.2" spikes currently running/cancelled/completed: 019eb308-6b3c-7d61-b141-11bd97b22946 (cancelled doom loop) and 019eb30a-97de-7081-9de3-aaf6d5c8e55b (EGL completed); focus normal_depth_circular as high-leverage next after full EGL if not complete or culvert-related; or normal_depth per lib.rs header mentions + critical 0.2 just done). 
-# Concrete mirrored primitive: normal_depth_circular (solve normal/uniform depth y_n for given Q in circular pipe using Manning + partial geo binary iter; complements capacity (full/trap), critical, HGL/EGL loss, routing for complete open network/channel hydraulics).
-# Pure fn + standard circular partial flow (A/P/R at y) + Manning, no new deps. (Fits STRATEGY "more 0.2" e.g. "normal_depth_circular or normal_depth_trapezoidal or ... full energy step if EGL not complete; or culvert-related". High leverage for network/culvert sizing after critical/EGL.)
+# Normal (uniform) depth for a circular pipe/channel: solve y_n for given Q via Manning + partial geometry.
 def normal_depth_circular(diameter_ft: float, n: float, slope_ft_per_ft: float, q_cfs: float) -> float:
     """
     Normal (uniform) depth for circular pipe/channel: solve for flow depth y_n given Q, D, n, S via Manning equation + partial circular geometry (binary search iter on y in (0,D); US ft/cfs, g not needed here).
-    High-leverage auditable primitive for network hydraulics / culvert / storm sewer (complements prior 0.2 capacity fns + critical_depth_circular + manning_friction_head_loss/EGL + routing; use to find normal depth then compare to critical or use for HGL/EGL stepping).
+    Use to find normal depth then compare to critical, or for HGL/EGL stepping.
 
-    Formula (US customary units for storm sewer / channel context, consistent with rational_peak cfs + prior 0.2 manning_* + critical):
+    Formula (US customary units for storm sewer / channel context):
         For given y: alpha = 2 * acos(1 - 2*(y/D))
         A = (D^2/4) * (alpha - sin(alpha))
         P = (D/2) * alpha
@@ -340,16 +276,8 @@ def normal_depth_circular(diameter_ft: float, n: float, slope_ft_per_ft: float, 
     Returns:
         y_n normal depth (ft); approx D if Q >= full capacity (simple iter clamps).
 
-    Mirrors exactly the implementations in:
-    - Rust/stormsewer (dev/OpenCADStudio/crates/stormsewer/src/lib.rs WASM + reexports; top stormsewer/README + src for docs)
-    - JS/hc-refactored (src/calc/index.js + window.HC after main.js load)
-
-    Reference: standard public-domain (Chow, HEC-22, etc). Complements pe-calc/tools/mannings.html (capacity) + reservoir-routing.html + prior 0.2.
-    Can combine with manning_full_flow_circular (for capacity check), critical_depth_circular, energy_grade_line_step etc for full network profiles (normal vs critical for regime, then losses).
-
-    Phase 3 note: concrete additional 0.2 primitive spike (post EGL 0.2 from completed spike 019eb30a-97de-7081-9de3-aaf6d5c8e55b + complement to cancelled 019eb308-6b3c-7d61-b141-11bd97b22946) per STRATEGY "more 0.2" recs + momentum after critical just done + HGL verif 019eb2f8-7cbc + FieldHydro pro 019eb2f9-0bab/019eb301-5904 + Tauri polishes + consumption verif + OpenCAD polish + auth/services 019eb301-5905 + acq monitor 019eb302-5c4b + dispatch followup 019eb2ff-5cb6. Keeps core 100% open/auditable/educational while
-    pro (FieldHydro network + provenance gate + AR field marks + batch, HydroComplete full modeling + Tauri desktop spike, exportProAuditPackage + auth/services) adds value on top without gating this primitive.
-    openness (free + identical contribute template as Rational/SCS/Manning/trap/routing/HGL/critical/EGL: implement + doc + export + note in quickstarts/STRATEGY + .github/ISSUE_TEMPLATE/engine-feedback.md),
+    Reference: standard public-domain (Chow, HEC-22). Combine with manning_full_flow_circular (capacity
+    check), critical_depth_circular, and energy_grade_line_step for full network profiles.
     """
     if diameter_ft <= 0.0 or n <= 0.0 or slope_ft_per_ft < 0.0 or q_cfs < 0.0:
         raise ValueError("diameter_ft >0, n>0, slope>=0, q>=0 required")
@@ -391,16 +319,12 @@ def normal_depth_circular(diameter_ft: float, n: float, slope_ft_per_ft: float, 
     return y_low
 
 
-# (a) normal_depth_trapezoidal (trap variant mirror style of normal_depth_circular, solves y for given Q using the existing flow fn; fills gap for open channel normal depth in networks).
-# (b) steady_network_hgl_profile (multi-reach HGL/EGL stepping using existing manning_friction_head_loss + energy_grade_line_step; simple list of reaches -> list of HGL/EGL points; for full steady profile in storm sewer networks / dam pilots).
-# If time/light: more routing foundation (level pool stub comment only; core routing already via linear_reservoir).
-# Pure fns, reuse priors, no new deps. US units. Mirrors exactly in stormsewer WASM + hc JS.
+# Normal (uniform) depth for a trapezoidal channel: solve y_n for given Q using manning_normal_flow_trapezoidal.
 def normal_depth_trapezoidal(bottom_width_ft: float, side_slope_z: float, n: float, slope_ft_per_ft: float, q_cfs: float) -> float:
     """
-    Normal (uniform) depth for trapezoidal channel (rect if z=0): solve y_n for given Q, b, z, n, S via binary iter on the existing manning_normal_flow_trapezoidal (mirror style of normal_depth_circular).
-    High-leverage auditable primitive for open channel network hydraulics / storm sewer (complements prior 0.2 capacity at-depth + circular normal/critical + HGL/EGL/routing for complete profiles in networks/dams).
+    Normal (uniform) depth for trapezoidal channel (rect if z=0): solve y_n for given Q, b, z, n, S via binary iter on the existing manning_normal_flow_trapezoidal.
 
-    Formula (US customary units for storm sewer / channel context, consistent with rational_peak cfs + prior 0.2 manning_normal_flow_trapezoidal):
+    Formula (US customary units for storm sewer / channel context):
         Find y_n s.t. Q = (1.486 / n) * A(y) * R(y)^(2/3) * S^(1/2)   where A=(b + z*y)*y , P=b+2*y*sqrt(1+z^2), R=A/P  (bisection on y).
 
     Args:
@@ -413,14 +337,8 @@ def normal_depth_trapezoidal(bottom_width_ft: float, side_slope_z: float, n: flo
     Returns:
         y_n normal depth (ft)
 
-    Mirrors exactly the implementations in:
-    - Rust/stormsewer (dev/OpenCADStudio/crates/stormsewer/src/lib.rs WASM + reexports; top stormsewer/README + src for docs)
-    - JS/hc-refactored (src/calc/index.js + window.HC after main.js load)
-
-    Reference: standard public-domain (Chow, HEC-22, etc). Complements pe-calc/tools/mannings.html + reservoir-routing.html + prior 0.2 (use with manning_normal_flow_trapezoidal for verify, friction loss for HGL profile).
-    Can combine with steady_network_hgl_profile (below) + prior for full network normal vs critical + loss profiles.
-
-    pro (FieldHydro network + provenance gate + AR field marks + batch, HydroComplete full modeling + Tauri desktop spike, exportPro* + auth/services) adds value on top without gating this primitive.
+    Reference: standard public-domain (Chow, HEC-22). Verify with manning_normal_flow_trapezoidal;
+    pair with friction loss for an HGL profile.
     """
     if bottom_width_ft < 0.0 or side_slope_z < 0.0 or n <= 0.0 or slope_ft_per_ft < 0.0 or q_cfs < 0.0:
         raise ValueError("bottom_width_ft >=0, side_slope_z >=0, n>0, slope>=0, q>=0 required")
@@ -452,7 +370,7 @@ def steady_network_hgl_profile(reaches: list, start_hgl_ft: float = 10.0) -> lis
     Steady (uniform flow assumption per reach) HGL/EGL profile for simple multi-reach network.
     High-leverage for full steady HGL/EGL in storm sewer networks / dam pilots (uses existing manning_friction_head_loss + energy_grade_line_step for stepping; simple list[dict] reaches -> list[dict] points with cum HGL/EGL).
     Reaches: each {'length_ft':L, 'n':n, 'area_ft2':A, 'hyd_radius_ft':R, 'q_cfs':Q, 'vel_head_up_ft':0, 'vel_head_down_ft':0 (opt)}
-    Steps downstream subtracting losses (start_hgl is upstream; profile shows cumulative drop). For backwater use full network solver in pro (FieldHydro/Tauri/HydroComplete).
+    Steps downstream subtracting losses (start_hgl is upstream; profile shows cumulative drop). Assumes uniform flow per reach; not a backwater solver.
 
     Formula (US, using priors):
         for each reach: hf = manning_friction_head_loss(Q, n, A, R, L)
@@ -466,13 +384,8 @@ def steady_network_hgl_profile(reaches: list, start_hgl_ft: float = 10.0) -> lis
     Returns:
         list of {'reach_idx':, 'cum_length_ft':, 'hgl_ft':, 'egl_ft':, 'hf_ft':, 'delta_egl_ft': }
 
-    Mirrors exactly the implementations in:
-    - Rust/stormsewer (dev/OpenCADStudio/crates/stormsewer/src/lib.rs WASM + reexports + network/hydraulics; top stormsewer/README + src for docs)
-    - JS/hc-refactored (src/calc/index.js + window.HC after main.js load)
-
-    Reference: standard public-domain (Chow, HEC-22, etc). Complements pe-calc/tools/mannings.html + reservoir-routing.html + prior 0.2 (pair w/ normal/crit depths for regime, losses for profile). Pilot use for network/dam per REAL_DISPATCH_PACKAGE.md + Priya/Mark.
-
-    pro (FieldHydro network + provenance + AR + batch for dam/network, HydroComplete full modeling + Tauri desktop, exportPro* ) adds value on top without gating this primitive.
+    Reference: standard public-domain (Chow, HEC-22). Pair with normal/critical depths for regime,
+    losses for the profile.
     """
     if not reaches:
         return []
@@ -504,15 +417,22 @@ def steady_network_hgl_profile(reaches: list, start_hgl_ft: float = 10.0) -> lis
     return profile
 
 
-# velocity fn gap fill: manning_velocity (mean flow velocity from Manning). Also discharge/area helper for completeness.
+# Manning mean flow velocity; discharge_to_velocity helper follows.
 def manning_velocity(n: float, hyd_radius_ft: float, slope_ft_per_ft: float) -> float:
     """
     Manning mean velocity for a reach (V in ft/s).
-    Formula (US): V = (1.486 / n) * R^(2/3) * S^(1/2)
-    Complements capacity (Q=V*A), HGL/EGL (velocity head V^2/2g in energy_grade_line_step), normal/critical for full network hydraulics.
-    Pure, no new deps.
 
-    Reference: public-domain Chow/HEC-22. Can use with manning_normal_flow_trapezoidal to get A then V=Q/A or direct.
+    Formula (US customary units): V = (1.486 / n) * R^(2/3) * S^(1/2)
+
+    Args:
+        n: Manning's roughness coefficient
+        hyd_radius_ft: hydraulic radius R (ft; A/P)
+        slope_ft_per_ft: friction slope S (ft/ft)
+
+    Returns:
+        V mean velocity (ft/s).
+
+    Reference: public-domain (Chow, HEC-22).
     """
     if n <= 0.0 or hyd_radius_ft <= 0.0 or slope_ft_per_ft < 0.0:
         raise ValueError("n>0, R>0, S>=0 required")
