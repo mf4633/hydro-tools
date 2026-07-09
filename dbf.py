@@ -18,17 +18,27 @@ def read_dbf(path: str) -> Iterator[Dict[str, Any]]:
     """
     with open(path, 'rb') as f:
         header = f.read(32)
+        if len(header) < 32:
+            raise ValueError(f"{path}: not a valid DBF (header truncated)")
         num_records = struct.unpack('<I', header[4:8])[0]
         header_len = struct.unpack('<H', header[8:10])[0]
         rec_len = struct.unpack('<H', header[10:12])[0]
 
         f.seek(32)
         fields: List[tuple] = []
-        while True:
+        # Field descriptors are 32 bytes each and end with a 0x0D terminator.
+        # Bound the loop by the declared header length so a missing terminator
+        # can't spin to EOF.
+        max_fields = max(0, (header_len - 32 - 1) // 32)
+        for _ in range(max_fields + 1):
             field_desc = f.read(32)
-            if field_desc[0] == 0x0D:   # end of field descriptor
+            if not field_desc:
+                raise ValueError(f"{path}: field descriptor block truncated / missing 0x0D terminator")
+            if field_desc[0] == 0x0D:   # end of field descriptor (1-byte terminator)
                 break
-            name = field_desc[0:11].decode('ascii').rstrip('\x00')
+            if len(field_desc) < 32:
+                raise ValueError(f"{path}: field descriptor truncated")
+            name = field_desc[0:11].decode('ascii', errors='replace').rstrip('\x00')
             ftype = chr(field_desc[11])
             flen = field_desc[16]
             fields.append((name, ftype, flen))
@@ -36,6 +46,8 @@ def read_dbf(path: str) -> Iterator[Dict[str, Any]]:
         f.seek(header_len)
         for _ in range(num_records):
             record = f.read(rec_len)
+            if len(record) < rec_len:   # truncated final record / short file
+                break
             if record[0] == 0x2A:       # deleted record marker
                 continue
             pos = 1

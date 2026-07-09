@@ -75,3 +75,44 @@ def test_read_dbf_is_iterator(sample_dbf):
     gen = read_dbf(sample_dbf)
     first = next(gen)
     assert first["NAME"] == "PipeA"
+
+
+def test_read_dbf_empty_file_raises(tmp_path):
+    path = tmp_path / "empty.dbf"
+    path.write_bytes(b"")
+    with pytest.raises(ValueError):
+        dbf_to_list(str(path))
+
+
+def test_read_dbf_truncated_header_raises(tmp_path):
+    path = tmp_path / "short.dbf"
+    path.write_bytes(b"\x03\x00\x00")   # fewer than 32 header bytes
+    with pytest.raises(ValueError):
+        dbf_to_list(str(path))
+
+
+def test_read_dbf_missing_terminator_raises(tmp_path):
+    # valid 32-byte header claiming a header_len that never reaches a 0x0D
+    fields = [("NAME", "C", 10)]
+    good = _make_dbf(fields, [(["PipeA"], False)])
+    # drop the 0x0D terminator and everything after -> truncated descriptor area
+    truncated = good[:32] + good[32:48]   # header + a partial field descriptor
+    path = tmp_path / "noterm.dbf"
+    path.write_bytes(truncated)
+    with pytest.raises(ValueError):
+        dbf_to_list(str(path))
+
+
+def test_read_dbf_truncated_record_stops_cleanly(tmp_path):
+    # declare 3 records but only supply bytes for 1.5 -> reader returns the whole
+    # records it has and stops instead of crashing
+    fields = [("NAME", "C", 10), ("FLOW", "N", 6)]
+    full = _make_dbf(fields, [(["PipeA", "15"], False), (["PipeB", "20"], False), (["PipeC", "25"], False)])
+    rec_len = 1 + 16
+    header_and_fields = 32 + 32 * len(fields) + 1
+    # keep header+fields + 1 full record + a partial second record
+    cutoff = header_and_fields + rec_len + (rec_len // 2)
+    path = tmp_path / "trunc.dbf"
+    path.write_bytes(full[:cutoff])
+    rows = dbf_to_list(str(path))
+    assert rows == [{"NAME": "PipeA", "FLOW": 15}]
