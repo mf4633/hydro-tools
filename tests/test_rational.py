@@ -76,14 +76,12 @@ def test_manning_normal_flow_trapezoidal():
     )
 
 
-def test_manning_normal_flow_rectangular_is_trapezoid_with_zero_z():
-    # z = 0 -> rectangular section
-    b, y, n, s = 1.0, 0.5, 0.025, 0.01
-    a = b * y
-    p = b + 2.0 * y
-    rr = a / p
-    expected = (1.486 / n) * a * (rr ** (2.0 / 3.0)) * (s ** 0.5)
-    assert r.manning_normal_flow_trapezoidal(b, 0.0, y, n, s) == pytest.approx(expected)
+def test_manning_normal_flow_rectangular_zero_z():
+    # z = 0 -> rectangular section. Expected value pinned independently
+    # (A=0.5, P=2.0, R=0.25): Q = (1.486/0.025)*0.5*0.25**(2/3)*0.01**0.5.
+    assert r.manning_normal_flow_trapezoidal(1.0, 0.0, 0.5, 0.025, 0.01) == pytest.approx(
+        1.1794, abs=1e-3
+    )
 
 
 @pytest.mark.parametrize(
@@ -211,3 +209,73 @@ def test_steady_network_hgl_profile_accepts_short_key_aliases():
     reaches = [{"L": 100.0, "n": 0.013, "A": 3.0, "R": 0.62132, "Q": 17.656}]
     prof = r.steady_network_hgl_profile(reaches, start_hgl_ft=10.0)
     assert prof[-1]["hf_ft"] == pytest.approx(0.5, abs=1e-3)
+
+
+def test_steady_network_hgl_profile_multi_reach_accumulates():
+    reach = {"n": 0.013, "area_ft2": 3.0, "hyd_radius_ft": 0.62132, "q_cfs": 17.656}
+    reaches = [
+        {**reach, "length_ft": 100.0},
+        {**reach, "length_ft": 50.0},
+        {**reach, "length_ft": 200.0},
+    ]
+    prof = r.steady_network_hgl_profile(reaches, start_hgl_ft=10.0)
+    assert [p["reach_idx"] for p in prof] == [0, 1, 2]
+    assert [p["cum_length_ft"] for p in prof] == [100.0, 150.0, 350.0]
+    # hf scales with reach length (same section/flow)
+    assert prof[0]["hf_ft"] == pytest.approx(0.5, abs=1e-3)
+    assert prof[1]["hf_ft"] == pytest.approx(0.25, abs=1e-3)
+    assert prof[2]["hf_ft"] == pytest.approx(1.0, abs=1e-3)
+    # HGL drops monotonically by the cumulative friction loss
+    assert prof[-1]["hgl_ft"] == pytest.approx(10.0 - (0.5 + 0.25 + 1.0), abs=1e-3)
+
+
+# --- Validation guards (parametrized) --------------------------------------
+
+@pytest.mark.parametrize(
+    "func, args",
+    [
+        (r.manning_normal_flow_trapezoidal, (2.0, 1.0, 0.0, 0.013, 0.005)),   # depth must be > 0
+        (r.manning_normal_flow_trapezoidal, (2.0, 1.0, 1.0, 0.0, 0.005)),     # n must be > 0
+        (r.manning_friction_head_loss, (10.0, 0.0, 2.0, 0.5, 100.0)),         # n must be > 0
+        (r.manning_friction_head_loss, (10.0, 0.013, 0.0, 0.5, 100.0)),       # area must be > 0
+        (r.manning_friction_head_loss, (10.0, 0.013, 2.0, 0.5, 0.0)),         # length must be > 0
+        (r.critical_depth_circular, (10.0, 0.0)),                            # diameter must be > 0
+        (r.energy_grade_line_step, (10.0, 0.0, 2.0, 0.5, 100.0)),            # n must be > 0
+        (r.normal_depth_circular, (0.0, 0.013, 0.005, 8.0)),                # diameter must be > 0
+        (r.normal_depth_trapezoidal, (2.0, 1.0, 0.0, 0.005, 10.0)),         # n must be > 0
+        (r.manning_velocity, (0.0, 0.5, 0.005)),                            # n must be > 0
+        (r.manning_velocity, (0.013, 0.0, 0.005)),                          # R must be > 0
+        (r.simple_linear_reservoir_routing, (10.0, 0.0, 0.0, 1.0)),         # K must be > 0
+        (r.simple_linear_reservoir_routing, (10.0, 0.0, 1.0, 0.0)),         # dt must be > 0
+        (r.simple_linear_reservoir_routing, (-1.0, 0.0, 1.0, 1.0)),         # flow must be >= 0
+        (r.manning_full_flow_circular, (2.0, 0.013, -0.001)),               # slope must be >= 0
+    ],
+)
+def test_validation_guards_raise(func, args):
+    with pytest.raises(ValueError):
+        func(*args)
+
+
+# --- Property / round-trip -------------------------------------------------
+
+@pytest.mark.parametrize("depth", [0.4, 0.7, 1.0, 1.3, 1.6])
+def test_normal_depth_circular_round_trips(depth):
+    # forward: discharge at a known depth; inverse: recover that depth
+    d, n, s = 2.0, 0.013, 0.005
+    a, _, p = r._circular_geometry(depth, d)
+    q = (1.486 / n) * a * ((a / p) ** (2.0 / 3.0)) * (s ** 0.5)
+    assert r.normal_depth_circular(d, n, s, q) == pytest.approx(depth, abs=2e-3)
+
+
+@pytest.mark.parametrize("depth", [0.25, 0.5, 1.0, 2.0, 4.0])
+def test_normal_depth_trapezoidal_round_trips(depth):
+    b, z, n, s = 4.0, 2.0, 0.013, 0.005
+    q = r.manning_normal_flow_trapezoidal(b, z, depth, n, s)
+    assert r.normal_depth_trapezoidal(b, z, n, s, q) == pytest.approx(depth, abs=2e-3)
+
+
+def test_critical_depth_below_diameter():
+    # critical depth is physically bounded by the pipe diameter
+    for q in (2.0, 5.0, 10.0, 15.0):
+        yc = r.critical_depth_circular(q, 2.0)
+        assert 0.0 < yc < 2.0
