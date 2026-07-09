@@ -7,8 +7,8 @@ pyproject.toml maps the ``hydro_tools`` import name to the repository root
 or otherwise) ``import hydro_tools`` just works. As a fallback for a bare
 checkout, register the repo root as the ``hydro_tools`` package here.
 """
+import importlib.util
 import sys
-import types
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -17,6 +17,14 @@ if "hydro_tools" not in sys.modules:
     try:
         import hydro_tools  # noqa: F401  (installed normally)
     except ModuleNotFoundError:
-        pkg = types.ModuleType("hydro_tools")
-        pkg.__path__ = [str(REPO_ROOT)]
-        sys.modules["hydro_tools"] = pkg
+        # Load and execute the real __init__.py as the ``hydro_tools`` package so
+        # its re-exports and __version__ are available, with the repo root as the
+        # submodule search path so ``from .rational import ...`` resolves.
+        spec = importlib.util.spec_from_file_location(
+            "hydro_tools",
+            REPO_ROOT / "__init__.py",
+            submodule_search_locations=[str(REPO_ROOT)],
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["hydro_tools"] = module
+        spec.loader.exec_module(module)
