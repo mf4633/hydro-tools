@@ -122,3 +122,7 @@ build/release workflow.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## See also
+
+Browser versions of these primitives, with worked notes: [Rational method](https://pe-calc.com/tools/rational-method.html), [SCS curve number runoff](https://pe-calc.com/tools/scs-runoff.html), and [Manning's equation](https://pe-calc.com/tools/mannings.html) on pe-calc.com.
